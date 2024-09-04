@@ -312,14 +312,6 @@ export const markNotificationRead = async (req, res) => {
         const userId = req.user.id;
         const { isRead, id } = req.query;
 
-        // Validate if isReadType is not 'all' and id is not provided
-        if (isRead !== 'all' && !id) {
-            return res.status(400).json({
-                status: false,
-                message: 'Notification ID is required',
-            });
-        }
-
         if (isRead === 'all') {
             // Mark all notifications as read for the user
             const unreadNotices = await prisma.noticeIsRead.findMany({
@@ -337,8 +329,15 @@ export const markNotificationRead = async (req, res) => {
 
             await Promise.all(
                 unreadNoticeIds.map((noticeId) => {
-                    return prisma.noticeIsRead.create({
-                        data: {
+                    return prisma.noticeIsRead.upsert({
+                        where: {
+                            noticeId_userId: {
+                                noticeId,
+                                userId,
+                            },
+                        },
+                        update: {},
+                        create: {
                             notice: { connect: { id: noticeId } },
                             user: { connect: { id: userId } },
                         },
@@ -350,7 +349,6 @@ export const markNotificationRead = async (req, res) => {
                 where: { id },
             });
 
-            // Validate if notification is not found
             if (!notice) {
                 return res.status(404).json({
                     status: false,
@@ -359,8 +357,15 @@ export const markNotificationRead = async (req, res) => {
             }
 
             // Mark the specific notification as read
-            await prisma.noticeIsRead.create({
-                data: {
+            await prisma.noticeIsRead.upsert({
+                where: {
+                    noticeId_userId: {
+                        noticeId: id,
+                        userId,
+                    },
+                },
+                update: {},
+                create: {
                     notice: { connect: { id } },
                     user: { connect: { id: userId } },
                 },
