@@ -13,6 +13,7 @@ import {
     updateUserProfile,
     getMe,
     refreshToken,
+    getAllUsers,
 } from '../controllers/userController.js';
 
 const router = express.Router();
@@ -22,6 +23,7 @@ router.post('/login', loginUser);
 router.get('/me', protectRoute, getMe);
 router.post('/logout', logoutUser);
 router.get('/refresh-token', refreshToken);
+router.get('/get-users', protectRoute, getAllUsers);
 
 router.get('/get-team', protectRoute, isAdminRoute, getTeamList);
 router.get('/notifications', protectRoute, getNotificationsList);

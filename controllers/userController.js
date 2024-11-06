@@ -151,6 +151,31 @@ export const loginUser = async (req, res) => {
     }
 };
 
+export const getAllUsers = async (req, res) => {
+    try {
+        const users = await prisma.user.findMany({
+            select: {
+                id: true,
+                name: true,
+                username: true,
+                email: true,
+                isActive: true,
+                role: true,
+                title: true,
+            },
+        });
+
+        res.status(200).json({
+            status: true,
+            message: 'Users fetched successfully',
+            data: users,
+        });
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ status: false, message: error.message });
+    }
+};
+
 export const getMe = async (req, res) => {
     try {
         const authorizationHeader = req.headers.authorization;
@@ -243,7 +268,7 @@ export const getNotificationsList = async (req, res) => {
             where: {
                 isRead: {
                     none: {
-                        id: userId, // Pastikan 'isRead' berisi array yang memiliki id dari user yang telah membaca
+                        userId,
                     },
                 },
             },
@@ -310,22 +335,24 @@ export const updateUserProfile = async (req, res) => {
 export const markNotificationRead = async (req, res) => {
     try {
         const userId = req.user.id;
-        const { isRead, id } = req.query;
+        const { isReadType, id } = req.query; // Ubah dari isRead ke isReadType
 
-        if (isRead === 'all') {
+        if (isReadType === 'all') {
             // Mark all notifications as read for the user
-            const unreadNotices = await prisma.noticeIsRead.findMany({
+            const unreadNotices = await prisma.notice.findMany({
                 where: {
-                    userId,
+                    isRead: {
+                        none: {
+                            userId,
+                        },
+                    },
                 },
                 select: {
-                    noticeId: true,
+                    id: true,
                 },
             });
 
-            const unreadNoticeIds = unreadNotices.map(
-                (notice) => notice.noticeId
-            );
+            const unreadNoticeIds = unreadNotices.map((notice) => notice.id);
 
             await Promise.all(
                 unreadNoticeIds.map((noticeId) => {

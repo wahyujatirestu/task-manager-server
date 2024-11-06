@@ -5,6 +5,7 @@ import {
     dashboardStatistics,
     deleteRestoreTask,
     duplicateTask,
+    getAllSubTask,
     getTask,
     getTasks,
     postTaskActivity,
@@ -24,6 +25,7 @@ router.get('/', protectRoute, getTasks);
 router.get('/:id', protectRoute, getTask);
 
 router.put('/create-subtask/:id', protectRoute, isAdminRoute, createSubTask);
+router.get('/get-subtask/:id', protectRoute, isAdminRoute, getAllSubTask);
 router.put('/update/:id', protectRoute, isAdminRoute, updateTask);
 router.put('/:id', protectRoute, isAdminRoute, trashTask);
 

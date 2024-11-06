@@ -7,6 +7,23 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Enum for Task Stage
+enum TaskStage {
+  TODO
+  IN_PROGRESS @map("IN-PROGRESS")
+  COMPLETED
+}
+
+// Enum for Activity Type
+enum ActivityType {
+  Assigned
+  Started
+  IN_PROGRESS @map("IN-PROGRESS")
+  Bug
+  Completed
+  Commented
+}
+
 model User {
   id          String     @id @default(uuid())
   name        String
@@ -30,7 +47,7 @@ model Task {
   title       String
   date        DateTime   @default(now())
   priority    String     @default("normal")
-  stage       String     @default("todo")
+  stage       TaskStage  @default(TODO) // Updated to enum
   activities  Activity[] @relation("TaskActivities")
   subTasks    SubTask[]  @relation("TaskSubTasks")
   assets      String[]
@@ -42,13 +59,13 @@ model Task {
 }
 
 model Activity {
-  id        String   @id @default(uuid())
-  type      String   @default("assigned")
+  id        String        @id @default(uuid())
+  type      ActivityType  @default(Assigned) // Updated to enum
   activity  String?
-  date      DateTime @default(now())
-  task      Task     @relation("TaskActivities", fields: [taskId], references: [id])
+  date      DateTime      @default(now())
+  task      Task          @relation("TaskActivities", fields: [taskId], references: [id])
   taskId    String
-  by        User     @relation("UserActivities", fields: [byId], references: [id])
+  by        User          @relation("UserActivities", fields: [byId], references: [id])
   byId      String
 }
 
