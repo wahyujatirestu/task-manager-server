@@ -145,14 +145,33 @@ export const postTaskActivity = async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
-        const { type, activity } = req.body;
+        let { type, activity } = req.body;
+
+        // Enum mapping to handle case-insensitive matching
+        const enumMapping = {
+            assigned: 'Assigned',
+            started: 'Started',
+            'in progress': 'IN_PROGRESS',
+            bug: 'Bug',
+            completed: 'Completed',
+            commented: 'Commented',
+        };
+
+        // Normalize the type to match enum values
+        type = enumMapping[type.toLowerCase()];
+        if (!type) {
+            return res
+                .status(400)
+                .json({ status: false, message: 'Invalid activity type.' });
+        }
 
         const task = await prisma.task.findUnique({ where: { id } });
 
         if (!task) {
-            return res
-                .status(404)
-                .json({ status: false, message: 'Task not found' });
+            return res.status(404).json({
+                status: false,
+                message: `Task with ID ${id} not found`,
+            });
         }
 
         await prisma.activity.create({
@@ -411,7 +430,9 @@ export const updateTask = async (req, res) => {
                 assets,
                 stage: validStage,
                 team: {
-                    set: validTeam.map((user) => ({ id: user.id })), // Only include valid IDs
+                    // set: validTeam.map((user) => ({ id: user.id })), // Only include valid IDs
+                    connect: validTeam.map((user) => ({ id: user.id })),
+                    disconnect: [],
                 },
             },
         });
