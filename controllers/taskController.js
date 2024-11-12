@@ -482,26 +482,53 @@ export const deleteRestoreTask = async (req, res) => {
         const { id } = req.params;
         const { actionType } = req.query;
 
-        // Check if the task exists before proceeding
-        const task = await prisma.task.findUnique({
-            where: { id },
-        });
-
-        if (!task) {
-            return res
-                .status(404)
-                .json({ status: false, message: 'Task not found' });
-        }
-
         if (actionType === 'delete') {
+            const task = await prisma.task.findUnique({
+                where: { id },
+            });
+
+            if (!task) {
+                return res
+                    .status(404)
+                    .json({ status: false, message: 'Task not found' });
+            }
+
+            // Hapus semua aktivitas dan subtask terkait dengan task yang dipilih
+            await prisma.activity.deleteMany({
+                where: { taskId: id },
+            });
+            await prisma.subTask.deleteMany({
+                where: { taskId: id },
+            });
+
+            // Hapus task
             await prisma.task.delete({
                 where: { id },
             });
         } else if (actionType === 'deleteAll') {
+            // Hapus semua aktivitas dan subtask terkait dengan task yang berada di trash
+            await prisma.activity.deleteMany({
+                where: { task: { isTrashed: true } },
+            });
+            await prisma.subTask.deleteMany({
+                where: { task: { isTrashed: true } },
+            });
+
+            // Hapus semua task yang ada di trash
             await prisma.task.deleteMany({
                 where: { isTrashed: true },
             });
         } else if (actionType === 'restore') {
+            const task = await prisma.task.findUnique({
+                where: { id },
+            });
+
+            if (!task) {
+                return res
+                    .status(404)
+                    .json({ status: false, message: 'Task not found' });
+            }
+
             await prisma.task.update({
                 where: { id },
                 data: { isTrashed: false },
