@@ -145,21 +145,18 @@ export const postTaskActivity = async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.user.id;
-        let { type, activity } = req.body;
+        const { type, activity } = req.body;
 
-        // Enum mapping to handle case-insensitive matching
-        const enumMapping = {
-            assigned: 'Assigned',
-            started: 'Started',
-            'in progress': 'IN_PROGRESS',
-            bug: 'Bug',
-            completed: 'Completed',
-            commented: 'Commented',
-        };
-
-        // Normalize the type to match enum values
-        type = enumMapping[type.toLowerCase()];
-        if (!type) {
+        // Check if type matches the allowed Prisma enums
+        const validTypes = [
+            'Assigned',
+            'Started',
+            'IN_PROGRESS',
+            'Bug',
+            'Completed',
+            'Commented',
+        ];
+        if (!validTypes.includes(type)) {
             return res
                 .status(400)
                 .json({ status: false, message: 'Invalid activity type.' });
@@ -197,6 +194,7 @@ export const dashboardStatistics = async (req, res) => {
     try {
         const userId = req.user.id;
         const isAdmin = req.user.isAdmin;
+        console.log(isAdmin);
 
         if (!userId) {
             return res.status(401).json({
