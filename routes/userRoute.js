@@ -9,7 +9,11 @@ import {
     loginUser,
     logoutUser,
     markNotificationRead,
+    forgetPassword,
+    resetPassword,
     registerUser,
+    verifyEmail,
+    resendVerificationEmail,
     updateUserProfile,
     getMe,
     refreshToken,
@@ -20,12 +24,16 @@ const router = express.Router();
 
 router.post('/register', registerUser);
 router.post('/login', loginUser);
+router.get('/verify-email', verifyEmail);
 router.get('/me', protectRoute, getMe);
 router.post('/logout', logoutUser);
 router.get('/refresh-token', refreshToken);
 router.get('/get-users', protectRoute, getAllUsers);
+router.post('/forget-password', forgetPassword);
+router.post('/reset-password', resetPassword);
+router.post('/resend-verification', resendVerificationEmail);
 
-router.get('/get-team', protectRoute, isAdminRoute, getTeamList);
+router.get('/get-team', protectRoute, getTeamList);
 router.get('/notifications', protectRoute, getNotificationsList);
 
 router.put('/profile', protectRoute, updateUserProfile);

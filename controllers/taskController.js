@@ -5,9 +5,29 @@ const prisma = new PrismaClient();
 export const createTask = async (req, res) => {
     try {
         const userId = req.user.id;
+        const userRole = req.user.role; // Role dari middleware protectRoute
         const { title, team, stage, date, priority, assets } = req.body;
 
-        // Normalize and validate stage input
+        // Hanya Admin dan User yang diizinkan
+        if (!['Admin', 'User'].includes(userRole)) {
+            return res.status(403).json({
+                status: false,
+                message: 'You are not authorized to create tasks.',
+            });
+        }
+
+        // Validasi input
+        if (!title) {
+            return res.status(400).json({
+                status: false,
+                message: 'Task title is required.',
+            });
+        }
+
+        // Validasi team, default ke userId jika tidak diberikan
+        const taskTeam = team && team.length > 0 ? team : [userId];
+
+        // Validasi stage
         const validStage =
             stage?.toUpperCase() === 'IN-PROGRESS'
                 ? 'IN_PROGRESS'
@@ -23,10 +43,10 @@ export const createTask = async (req, res) => {
         const task = await prisma.task.create({
             data: {
                 title,
-                team: { connect: team.map((userId) => ({ id: userId })) },
+                team: { connect: taskTeam.map((userId) => ({ id: userId })) },
                 stage: validStage,
-                date: new Date(date),
-                priority: priority.toUpperCase(),
+                date: date ? new Date(date) : new Date(),
+                priority: priority ? priority.toUpperCase() : 'NORMAL',
                 assets,
                 activities: {
                     create: {
@@ -193,7 +213,7 @@ export const postTaskActivity = async (req, res) => {
 export const dashboardStatistics = async (req, res) => {
     try {
         const userId = req.user.id;
-        const isAdmin = req.user.isAdmin;
+        const isAdmin = req.user.role === 'Admin';
         console.log(isAdmin);
 
         if (!userId) {
@@ -230,7 +250,6 @@ export const dashboardStatistics = async (req, res) => {
                       name: true,
                       title: true,
                       role: true,
-                      isAdmin: true,
                       createdAt: true,
                   },
                   take: 10,
@@ -277,8 +296,10 @@ export const dashboardStatistics = async (req, res) => {
 
 export const getTasks = async (req, res) => {
     try {
+        const userId = req.user.id; // Pastikan userId diambil dari token atau session
         const { stage, isTrashed } = req.query;
 
+        // Mapkan stage menjadi enum yang valid
         const mapStageToEnum = (stage) => {
             switch (stage?.toLowerCase()) {
                 case 'todo':
@@ -292,16 +313,22 @@ export const getTasks = async (req, res) => {
             }
         };
 
-        const prismaStage = mapStageToEnum(stage); // Convert to enum
+        const prismaStage = mapStageToEnum(stage);
 
+        // Query task yang hanya milik tim user
         const tasks = await prisma.task.findMany({
             where: {
                 isTrashed: isTrashed === 'true',
-                ...(prismaStage && { stage: prismaStage }), // Apply only if stage is valid
+                ...(prismaStage && { stage: prismaStage }),
+                team: {
+                    some: {
+                        id: userId, // Pastikan user adalah anggota tim
+                    },
+                },
             },
             include: {
                 team: {
-                    select: { id: true, name: true, title: true, email: true },
+                    select: { id: true, name: true, email: true },
                 },
                 subTasks: true,
             },
@@ -348,6 +375,86 @@ export const getTask = async (req, res) => {
     } catch (error) {
         console.error(error);
         return res.status(400).json({ status: false, message: error.message });
+    }
+};
+
+export const searchTasks = async (req, res) => {
+    try {
+        const { query } = req.query; // Ambil query dari parameter request
+
+        // Validasi input
+        if (!query) {
+            console.log('No search query provided');
+            return res.status(400).json({
+                status: false,
+                message: 'Search query is required.',
+            });
+        }
+
+        console.log('Search query received:', query); // Log input query
+
+        // Cari tugas berdasarkan query
+        const tasks = await prisma.task.findMany({
+            where: {
+                title: {
+                    contains: query, // Bersihkan spasi
+                    mode: 'insensitive', // Case-insensitive search
+                },
+            },
+            select: { id: true, title: true },
+            take: 5,
+        });
+
+        console.log('Tasks found:', tasks); // Log hasil pencarian
+
+        if (tasks.length === 0) {
+            console.log('No tasks match the search query');
+            return res.status(404).json({
+                status: false,
+                message: 'No tasks found matching the query.',
+            });
+        }
+
+        res.status(200).json({
+            status: true,
+            tasks,
+        });
+    } catch (error) {
+        console.error('Error searching tasks:', error.message);
+        return res.status(500).json({ status: false, message: error.message });
+    }
+};
+
+export const getSuggestions = async (req, res) => {
+    try {
+        const { query } = req.query;
+
+        if (!query) {
+            return res
+                .status(400)
+                .json({ status: false, message: 'Query is required' });
+        }
+
+        const tasks = await prisma.task.findMany({
+            where: {
+                title: {
+                    contains: query,
+                    mode: 'insensitive',
+                },
+            },
+            select: {
+                id: true,
+                title: true,
+                priority: true,
+                stage: true,
+            },
+            take: 10,
+        });
+
+        res.status(200).json({ status: true, tasks });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ status: false, message: error.message });
     }
 };
 

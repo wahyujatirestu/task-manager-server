@@ -12,7 +12,9 @@ const protectRoute = async (req, res, next) => {
     }
 
     try {
-        const decoded = jwt.verify(token, process.env.JWT_ACCESS_TOKEN); // Use the same secret used to generate the token
+        const decoded = jwt.verify(token, process.env.JWT_ACCESS_TOKEN);
+        console.log('Decoded token:', decoded); // Log token decoded
+
         const dbUser = await prisma.user.findUnique({
             where: { id: decoded.id },
             select: {
@@ -21,18 +23,25 @@ const protectRoute = async (req, res, next) => {
                 email: true,
                 title: true,
                 role: true,
-                isAdmin: true,
                 isActive: true,
             },
         });
 
         if (!dbUser) {
+            console.log('User not found in database');
             return res.status(403).json({ error: 'User not found' });
         }
 
-        req.user = dbUser;
+        if (!dbUser.isActive) {
+            console.log('User is deactivated');
+            return res.status(403).json({ error: 'User is deactivated' });
+        }
+
+        console.log('Authenticated User:', dbUser); // Log user details
+        req.user = dbUser; // Attach user data to the request
         next();
     } catch (err) {
+        console.error('Error verifying token:', err.message);
         if (err.name === 'JsonWebTokenError') {
             return res.status(403).json({ error: 'Invalid token' });
         }
@@ -44,7 +53,7 @@ const protectRoute = async (req, res, next) => {
 };
 
 const isAdminRoute = (req, res, next) => {
-    if (req.user && req.user.isAdmin) {
+    if (req.user && req.user.role === 'Admin') {
         next();
     } else {
         return res.status(401).json({
