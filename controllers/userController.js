@@ -414,7 +414,6 @@ export const getAllUsers = async (req, res) => {
                 username: true,
                 email: true,
                 isActive: true,
-                role: true,
                 title: true,
             },
         });
@@ -493,6 +492,153 @@ export const logoutUser = async (req, res) => {
     }
 };
 
+export const createGroup = async (req, res) => {
+    try {
+        const { name, members = [] } = req.body;
+        const { id: adminId } = req.user;
+
+        console.log('Creating group with name:', name, 'and members:', members);
+
+        if (!name) {
+            return res.status(400).json({ message: 'Group name is required' });
+        }
+
+        if (!Array.isArray(members)) {
+            return res
+                .status(400)
+                .json({ message: 'Members must be an array' });
+        }
+
+        const allMembers = [...members, adminId];
+
+        const group = await prisma.group.create({
+            data: {
+                name,
+                adminId,
+                members: {
+                    create: allMembers.map((memberId) => ({
+                        userId: memberId,
+                        role: memberId === adminId ? 'Admin' : 'Member',
+                    })),
+                },
+            },
+            include: {
+                members: { include: { user: true } },
+            },
+        });
+
+        console.log('Group created successfully:', group);
+
+        res.status(201).json({ group });
+    } catch (error) {
+        console.error('Error creating group:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
+
+export const getUserGroups = async (req, res) => {
+    try {
+        const { id: userId } = req.user;
+
+        console.log('Fetching groups for user ID:', userId);
+
+        const groups = await prisma.group.findMany({
+            where: {
+                OR: [{ adminId: userId }, { members: { some: { userId } } }],
+            },
+            include: {
+                members: { include: { user: true } },
+            },
+        });
+
+        console.log('Groups fetched successfully for user ID:', userId, groups);
+
+        res.status(200).json({ groups });
+    } catch (error) {
+        console.error('Error fetching groups:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
+
+export const addUserToGroup = async (req, res) => {
+    try {
+        const { groupId } = req.params;
+        const { userId } = req.body;
+
+        if (!groupId || !userId) {
+            return res
+                .status(400)
+                .json({ message: 'Group ID and User ID are required.' });
+        }
+
+        const existingMember = await prisma.groupMember.findFirst({
+            where: { groupId, userId },
+        });
+
+        if (existingMember) {
+            return res.status(400).json({
+                message: 'User is already a member of the group.',
+            });
+        }
+
+        const groupMember = await prisma.groupMember.create({
+            data: { groupId, userId },
+        });
+
+        console.log('User added to group successfully:', groupMember);
+
+        await prisma.notice.create({
+            data: {
+                text: `You have been added to the group "${group.name}".`,
+                notiType: 'alert',
+                isRead: {
+                    create: [
+                        {
+                            user: { connect: { id: userId } },
+                        },
+                    ],
+                },
+            },
+        });
+
+        const updatedMembers = await prisma.groupMember.findMany({
+            where: { groupId },
+            include: { user: true },
+        });
+
+        res.status(201).json({
+            message: 'User added successfully.',
+            members: updatedMembers,
+        });
+    } catch (error) {
+        console.error('Error adding user to group:', error.message);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+};
+
+export const getGroupMembers = async (req, res) => {
+    try {
+        const { groupId } = req.params;
+
+        if (!groupId) {
+            return res.status(400).json({ message: 'Group ID is required' });
+        }
+
+        const members = await prisma.groupMember.findMany({
+            where: { groupId },
+            include: {
+                user: true,
+                group: true,
+            },
+        });
+
+        res.status(200).json(members);
+    } catch (error) {
+        console.error('Error fetching group members:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
+
 export const getTeamList = async (req, res) => {
     try {
         const users = await prisma.user.findMany({
@@ -500,7 +646,6 @@ export const getTeamList = async (req, res) => {
                 id: true,
                 name: true,
                 title: true,
-                role: true,
                 email: true,
                 username: true,
                 isActive: true,
@@ -511,6 +656,40 @@ export const getTeamList = async (req, res) => {
     } catch (error) {
         console.error(error);
         return res.status(500).json({ status: false, message: error.message });
+    }
+};
+
+export const searchUsers = async (req, res) => {
+    try {
+        const { query } = req.query;
+
+        if (!query) {
+            return res.status(400).json({ message: 'Query is required' });
+        }
+
+        const users = await prisma.user.findMany({
+            where: {
+                OR: [
+                    { name: { contains: query, mode: 'insensitive' } },
+                    { email: { contains: query, mode: 'insensitive' } },
+                ],
+                isActive: true,
+            },
+            select: {
+                id: true,
+                name: true,
+                email: true,
+            },
+        });
+
+        res.status(200).json({
+            status: true,
+            message: 'Users fetched successfully',
+            data: users,
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ status: false, message: error.message });
     }
 };
 
@@ -533,26 +712,27 @@ export const getNotificationsList = async (req, res) => {
                     },
                 },
             },
+            orderBy: { createdAt: 'desc' }, // Urutkan berdasarkan waktu terbaru
         });
 
-        res.status(200).json(notices);
+        res.status(200).json({
+            status: true,
+            message: 'Notifications fetched successfully.',
+            data: notices,
+        });
     } catch (error) {
-        console.error(error);
-        return res.status(500).json({ status: false, message: error.message });
+        console.error('Error in getNotificationsList:', error.message);
+        res.status(500).json({ status: false, message: error.message });
     }
 };
 
 export const updateUserProfile = async (req, res) => {
     try {
         const userId = req.user.id;
-        const isAdmin = req.user.role === 'Admin';
         const { id: requestedId } = req.body;
+        const id = requestedId ? requestedId : userId;
 
-        const id = isAdmin && requestedId ? requestedId : userId;
-
-        const user = await prisma.user.findUnique({
-            where: { id },
-        });
+        const user = await prisma.user.findUnique({ where: { id } });
 
         if (user) {
             const updatedUser = await prisma.user.update({
@@ -566,6 +746,13 @@ export const updateUserProfile = async (req, res) => {
                 },
             });
 
+            // Generate new token with updated user data
+            const token = jwt.sign(
+                { id: updatedUser.id, role: updatedUser.role },
+                process.env.JWT_ACCESS_TOKEN,
+                { expiresIn: '1h' } // Adjust expiration as needed
+            );
+
             res.status(200).json({
                 status: true,
                 message: 'Profile Updated Successfully.',
@@ -578,13 +765,14 @@ export const updateUserProfile = async (req, res) => {
                     username: updatedUser.username,
                     isActive: updatedUser.isActive,
                 },
+                token, // Send new token to frontend
             });
         } else {
             res.status(404).json({ status: false, message: 'User not found' });
         }
     } catch (error) {
         console.error(error);
-        return res.status(500).json({ status: false, message: error.message });
+        res.status(500).json({ status: false, message: error.message });
     }
 };
 

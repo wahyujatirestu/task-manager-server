@@ -1,117 +1,143 @@
-generator client {
-  provider = "prisma-client-js"
-}
+  generator client {
+    provider = "prisma-client-js"
+  }
 
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
+  datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+  }
 
-// Enum for Task Stage
-enum TaskStage {
-  TODO
-  IN_PROGRESS @map("IN-PROGRESS")
-  COMPLETED
-}
+  // Enum for Task Stage
+  enum TaskStage {
+    TODO
+    IN_PROGRESS @map("IN-PROGRESS")
+    COMPLETED
+  }
 
-// Enum for Activity Type
-enum ActivityType {
-  Assigned
-  Started
-  IN_PROGRESS @map("IN-PROGRESS")
-  Bug
-  Completed
-  Commented
-}
+  // Enum for Activity Type
+  enum ActivityType {
+    Assigned
+    Started
+    IN_PROGRESS @map("IN-PROGRESS")
+    Bug
+    Completed
+    Commented
+  }
 
-// Enum for User Role
-enum UserRole {
-  Admin
-  User
-}
+  // Enum for User Role
+  enum UserRole {
+    Admin
+    Member
+  }
 
-model Token {
-  id        String   @id @default(uuid())
-  userId    String
-  token     String
-  user      User     @relation(fields: [userId], references: [id])
-  createdAt DateTime @default(now())
-}
+  model Token {
+    id        String   @id @default(uuid())
+    userId    String
+    token     String
+    user      User     @relation(fields: [userId], references: [id])
+    createdAt DateTime @default(now())
+  }
 
+  model User {
+    id          String       @id @default(uuid())
+    name        String?
+    title       String?
+    email       String       @unique
+    username    String       @unique
+    password    String
+    isActive    Boolean      @default(true)
+    isVerified  Boolean      @default(false)
+    verificationToken String?
+    tasks       Task[]       @relation("UserTasks")
+    activities  Activity[]   @relation("UserActivities")
+    notices     NoticeIsRead[] @relation("UserNotices")
+    refreshToken String?
+    createdAt   DateTime     @default(now())
+    updatedAt   DateTime     @updatedAt
+    tokens      Token[]
 
-model User {
-  id          String     @id @default(uuid())
-  name        String?
-  title       String?
-  role        UserRole   @default(User)
-  email       String     @unique
-  username    String     @unique
-  password    String
-  isActive    Boolean    @default(true)
-  isVerified Boolean  @default(false)
-  verificationToken String?
-  tasks       Task[]     @relation("UserTeams")
-  activities  Activity[] @relation("UserActivities")
-  notices     NoticeIsRead[] @relation("UserNotices")
-  refreshToken String?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-  tokens      Token[]   
-}
+    // New relations
+    adminGroups Group[]       @relation("GroupAdmins")
+    memberGroups GroupMember[] @relation("GroupMembers")
+  }
 
-model Task {
-  id          String     @id @default(uuid())
-  title       String
-  date        DateTime   @default(now())
-  priority    String     @default("normal")
-  stage       TaskStage  @default(TODO) // Updated to enum
-  activities  Activity[] @relation("TaskActivities")
-  subTasks    SubTask[]  @relation("TaskSubTasks")
-  assets      String[]
-  team        User[]     @relation("UserTeams")
-  notices     Notice[]   @relation("TaskNotices")
-  isTrashed   Boolean    @default(false)
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-}
+  model Group {
+    id          String       @id @default(uuid())
+    name        String
+    adminId     String
+    admin       User         @relation("GroupAdmins", fields: [adminId], references: [id])
+    members     GroupMember[]
+    tasks       Task[]       @relation("GroupTasks") // Relasi ke Task
+    createdAt   DateTime     @default(now())
+    updatedAt   DateTime     @updatedAt
+  }
 
-model Activity {
-  id        String        @id @default(uuid())
-  type      ActivityType  @default(Assigned) // Updated to enum
-  activity  String?
-  date      DateTime      @default(now())
-  task      Task          @relation("TaskActivities", fields: [taskId], references: [id])
-  taskId    String
-  by        User          @relation("UserActivities", fields: [byId], references: [id])
-  byId      String
-}
+  model GroupMember {
+    id        String       @id @default(uuid())
+    userId    String
+    groupId   String
+    role      UserRole     @default(Member)
+    user      User         @relation("GroupMembers", fields: [userId], references: [id])
+    group     Group        @relation(fields: [groupId], references: [id])
 
-model SubTask {
-  id       String   @id @default(uuid())
-  title    String?
-  date     DateTime?
-  tag      String?
-  task     Task     @relation("TaskSubTasks", fields: [taskId], references: [id])
-  taskId   String
-}
+    @@unique([userId, groupId]) // Ensure a user cannot join the same group multiple times
+  }
 
-model Notice {
-  id        String   @id @default(uuid())
-  text      String?
-  task      Task?    @relation("TaskNotices", fields: [taskId], references: [id])
-  taskId    String?
-  notiType  String   @default("alert")
-  isRead    NoticeIsRead[] @relation("NoticeReads")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
+  model Task {
+    id          String     @id @default(uuid()) 
+    title       String
+    date        DateTime   @default(now())
+    priority    String     @default("normal")
+    stage       TaskStage  @default(TODO)
+    groupId     String?     // Relasi ke Group
+    group       Group?      @relation("GroupTasks", fields: [groupId], references: [id])
+    activities  Activity[] @relation("TaskActivities")
+    subTasks    SubTask[]  @relation("TaskSubTasks")
+    assets      String[]
+    notices     Notice[]   @relation("TaskNotices")
+    team        User[]     @relation("UserTasks") // Tim yang ditugaskan
+    isTrashed   Boolean    @default(false)
+    createdAt   DateTime   @default(now())
+    updatedAt   DateTime   @updatedAt
+  }
 
-model NoticeIsRead {
-  id        String   @id @default(uuid())
-  notice    Notice   @relation("NoticeReads", fields: [noticeId], references: [id])
-  noticeId  String
-  user      User     @relation("UserNotices", fields: [userId], references: [id])
-  userId    String
+  model Activity {
+    id        String        @id @default(uuid())
+    type      ActivityType  @default(Assigned)
+    activity  String?
+    date      DateTime      @default(now())
+    task      Task          @relation("TaskActivities", fields: [taskId], references: [id])
+    taskId    String
+    by        User          @relation("UserActivities", fields: [byId], references: [id])
+    byId      String
+  }
 
-  @@unique([noticeId, userId]) // Ensures a user can only read a notice once
-}
+  model SubTask {
+    id       String   @id @default(uuid())
+    title    String?
+    date     DateTime?
+    tag      String?
+    task     Task     @relation("TaskSubTasks", fields: [taskId], references: [id])
+    taskId   String
+  }
+
+  model Notice {
+    id        String   @id @default(uuid())
+    text      String?
+    task      Task?    @relation("TaskNotices", fields: [taskId], references: [id])
+    taskId    String?
+    notiType  String   @default("alert")
+    isRead    NoticeIsRead[] @relation("NoticeReads")
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+  }
+
+  model NoticeIsRead {
+    id        String   @id @default(uuid())
+    notice    Notice   @relation("NoticeReads", fields: [noticeId], references: [id])
+    noticeId  String
+    user      User     @relation("UserNotices", fields: [userId], references: [id])
+    userId    String
+
+    @@unique([noticeId, userId]) // Ensures a user can only read a notice once
+  }

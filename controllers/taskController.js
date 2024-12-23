@@ -4,17 +4,8 @@ const prisma = new PrismaClient();
 
 export const createTask = async (req, res) => {
     try {
-        const userId = req.user.id;
-        const userRole = req.user.role; // Role dari middleware protectRoute
-        const { title, team, stage, date, priority, assets } = req.body;
-
-        // Hanya Admin dan User yang diizinkan
-        if (!['Admin', 'User'].includes(userRole)) {
-            return res.status(403).json({
-                status: false,
-                message: 'You are not authorized to create tasks.',
-            });
-        }
+        const userId = req.user.id; // ID dari user saat ini
+        const { title, stage, date, priority, assets, groupId } = req.body;
 
         // Validasi input
         if (!title) {
@@ -24,10 +15,6 @@ export const createTask = async (req, res) => {
             });
         }
 
-        // Validasi team, default ke userId jika tidak diberikan
-        const taskTeam = team && team.length > 0 ? team : [userId];
-
-        // Validasi stage
         const validStage =
             stage?.toUpperCase() === 'IN-PROGRESS'
                 ? 'IN_PROGRESS'
@@ -36,37 +23,74 @@ export const createTask = async (req, res) => {
         if (!['TODO', 'IN_PROGRESS', 'COMPLETED'].includes(validStage)) {
             return res.status(400).json({
                 status: false,
-                message: 'Invalid stage value',
+                message: 'Invalid stage value.',
             });
         }
 
+        // Data dasar untuk task
+        const taskData = {
+            title,
+            stage: validStage,
+            date: date ? new Date(date) : new Date(),
+            priority: priority ? priority.toUpperCase() : 'NORMAL',
+            assets,
+            team: { connect: [{ id: userId }] }, // Default: hanya pembuat
+        };
+
+        if (groupId) {
+            // Jika tugas dibuat untuk grup
+            const group = await prisma.group.findUnique({
+                where: { id: groupId },
+                include: { members: true, admin: true },
+            });
+
+            if (!group) {
+                return res.status(404).json({
+                    status: false,
+                    message: 'Group not found.',
+                });
+            }
+
+            // Pastikan pembuat adalah anggota grup
+            const isMember = group.members.some(
+                (member) => member.userId === userId
+            );
+            if (!isMember && group.adminId !== userId) {
+                return res.status(403).json({
+                    status: false,
+                    message:
+                        'You are not authorized to create tasks in this group.',
+                });
+            }
+
+            taskData.groupId = groupId;
+
+            // Hanya admin yang bisa menetapkan anggota tim
+            if (group.adminId === userId) {
+                taskData.team = {
+                    connect: group.members.map((member) => ({
+                        id: member.userId,
+                    })),
+                };
+            }
+        }
+
         const task = await prisma.task.create({
-            data: {
-                title,
-                team: { connect: taskTeam.map((userId) => ({ id: userId })) },
-                stage: validStage,
-                date: date ? new Date(date) : new Date(),
-                priority: priority ? priority.toUpperCase() : 'NORMAL',
-                assets,
-                activities: {
-                    create: {
-                        type: 'Assigned',
-                        activity: `New task assigned: ${title}`,
-                        by: { connect: { id: userId } },
-                    },
-                },
-            },
-            include: { activities: true },
+            data: taskData,
+            include: { team: true, group: true },
         });
 
-        res.status(200).json({
+        res.status(201).json({
             status: true,
             task,
             message: 'Task created successfully.',
         });
     } catch (error) {
-        console.error(error);
-        res.status(400).json({ status: false, message: error.message });
+        console.error('Error creating task:', error);
+        res.status(500).json({
+            status: false,
+            message: 'Internal server error.',
+        });
     }
 };
 
@@ -74,7 +98,7 @@ export const duplicateTask = async (req, res) => {
     try {
         const { id } = req.params;
 
-        // Find the original task by ID
+        // Temukan tugas asli
         const task = await prisma.task.findUnique({
             where: { id },
             include: {
@@ -90,14 +114,14 @@ export const duplicateTask = async (req, res) => {
                 .json({ status: false, message: 'Task not found' });
         }
 
-        // Create a new task (duplicate) without including activities and notices initially
+        // Proses duplikasi tugas
         const newTask = await prisma.task.create({
             data: {
                 title: `${task.title} - Duplicate`,
                 team: { connect: task.team.map((user) => ({ id: user.id })) },
                 subTasks: {
                     create: task.subTasks.map((subTask) => ({
-                        title: subTask.title, // Ensure to include the title and other fields
+                        title: subTask.title,
                         date: subTask.date,
                         tag: subTask.tag,
                     })),
@@ -109,51 +133,21 @@ export const duplicateTask = async (req, res) => {
             },
         });
 
-        // Create activities for the new task, including the correct field for the user who performed the activity
+        // Tambahkan aktivitas baru ke tugas duplikasi
         await prisma.activity.createMany({
             data: task.activities.map((activity) => ({
-                type: activity.type, // Ensure to include the type
+                type: activity.type,
                 activity: activity.activity,
                 date: activity.date,
-                taskId: newTask.id, // Use the new task ID
-                byId: activity.byId, // Correctly reference the byId field
+                taskId: newTask.id,
+                byId: activity.byId,
             })),
         });
 
-        // Create text notice for the team
-        let text = 'New task has been assigned to you';
-        if (task.team.length > 1) {
-            text += ` and ${task.team.length - 1} others.`;
-        }
-
-        text += ` The task priority is set to ${
-            task.priority
-        } priority, so check and act accordingly. The task date is ${task.date.toDateString()}. Thank you!!!`;
-
-        // Create notice for the new task
-        const notice = await prisma.notice.create({
-            data: {
-                text,
-                task: { connect: { id: newTask.id } },
-            },
-        });
-
-        // Create NoticeIsRead entries for each team member
-        await Promise.all(
-            task.team.map((user) =>
-                prisma.noticeIsRead.create({
-                    data: {
-                        notice: { connect: { id: notice.id } },
-                        user: { connect: { id: user.id } },
-                    },
-                })
-            )
-        );
-
-        // Successful response
         res.status(200).json({
             status: true,
             message: 'Task duplicated successfully.',
+            data: newTask,
         });
     } catch (error) {
         console.error(error);
@@ -213,27 +207,26 @@ export const postTaskActivity = async (req, res) => {
 export const dashboardStatistics = async (req, res) => {
     try {
         const userId = req.user.id;
-        const isAdmin = req.user.role === 'Admin';
-        console.log(isAdmin);
 
-        if (!userId) {
-            return res.status(401).json({
-                status: false,
-                message: 'Unauthorized: User ID is missing.',
-            });
-        }
-
+        // Ambil semua task yang dimiliki user (baik individu maupun dari grup)
         const allTasks = await prisma.task.findMany({
             where: {
+                OR: [
+                    { team: { some: { id: userId } } }, // Tugas di mana user adalah anggota tim
+                    { group: { members: { some: { userId } } } }, // Tugas dari grup di mana user adalah anggota
+                ],
                 isTrashed: false,
-                ...(isAdmin ? {} : { team: { some: { id: userId } } }),
             },
             include: {
+                group: {
+                    select: {
+                        name: true, // Ambil nama grup untuk ditampilkan sebagai "team"
+                    },
+                },
                 team: {
                     select: {
+                        id: true,
                         name: true,
-                        role: true,
-                        title: true,
                         email: true,
                     },
                 },
@@ -242,27 +235,14 @@ export const dashboardStatistics = async (req, res) => {
             orderBy: { createdAt: 'desc' },
         });
 
-        const users = isAdmin
-            ? await prisma.user.findMany({
-                  where: { isActive: true },
-                  select: {
-                      id: true,
-                      name: true,
-                      title: true,
-                      role: true,
-                      createdAt: true,
-                  },
-                  take: 10,
-                  orderBy: { createdAt: 'desc' },
-              })
-            : [];
-
+        // Kelompokkan task berdasarkan stage
         const groupTasks = allTasks.reduce((result, task) => {
             const stage = task.stage;
             result[stage] = (result[stage] || 0) + 1;
             return result;
         }, {});
 
+        // Kelompokkan task berdasarkan priority untuk grafik
         const groupData = Object.entries(
             allTasks.reduce((result, task) => {
                 const { priority } = task;
@@ -271,17 +251,18 @@ export const dashboardStatistics = async (req, res) => {
             }, {})
         ).map(([name, total]) => ({ name, total }));
 
-        const totalTasks = allTasks.length;
-        const last10Task = allTasks.slice(0, 10);
+        // Ambil hanya 10 tugas terbaru untuk tabel
+        const last10Task = allTasks.slice(0, 10).map((task) => ({
+            ...task,
+            team: task.group ? task.group.name : null, // Nama grup sebagai "team" jika ada
+        }));
 
         const summary = {
-            totalTasks,
-            last10Task,
-            users,
+            totalTasks: allTasks.length,
             tasks: groupTasks,
             graphData: groupData,
+            last10Task, // Tugas terbaru untuk tabel
         };
-        console.log(summary);
 
         res.status(200).json({
             status: true,
@@ -289,17 +270,17 @@ export const dashboardStatistics = async (req, res) => {
             data: summary,
         });
     } catch (error) {
-        console.error(error);
-        return res.status(400).json({ status: false, message: error.message });
+        console.error('Error in dashboardStatistics:', error.message);
+        res.status(500).json({ status: false, message: error.message });
     }
 };
 
 export const getTasks = async (req, res) => {
     try {
-        const userId = req.user.id; // Pastikan userId diambil dari token atau session
+        const userId = req.user.id; // Ambil user ID dari token
         const { stage, isTrashed } = req.query;
 
-        // Mapkan stage menjadi enum yang valid
+        // Konversi stage ke enum yang valid
         const mapStageToEnum = (stage) => {
             switch (stage?.toLowerCase()) {
                 case 'todo':
@@ -315,37 +296,44 @@ export const getTasks = async (req, res) => {
 
         const prismaStage = mapStageToEnum(stage);
 
-        // Query task yang hanya milik tim user
+        // Query task berdasarkan user dan filter
         const tasks = await prisma.task.findMany({
             where: {
                 isTrashed: isTrashed === 'true',
                 ...(prismaStage && { stage: prismaStage }),
                 team: {
                     some: {
-                        id: userId, // Pastikan user adalah anggota tim
+                        id: userId, // Pastikan hanya task yang melibatkan user
                     },
                 },
             },
             include: {
                 team: {
-                    select: { id: true, name: true, email: true },
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                    },
                 },
                 subTasks: true,
             },
             orderBy: { createdAt: 'desc' },
         });
 
-        res.status(200).json({ status: true, tasks });
+        res.status(200).json({
+            status: true,
+            message: 'Tasks fetched successfully.',
+            tasks,
+        });
     } catch (error) {
-        console.error(error);
-        return res.status(400).json({ status: false, message: error.message });
+        console.error('Error in getTasks:', error.message);
+        return res.status(500).json({ status: false, message: error.message });
     }
 };
 
 export const getTask = async (req, res) => {
     try {
         const { id } = req.params;
-
         const task = await prisma.task.findUnique({
             where: { id },
             include: {
@@ -354,8 +342,17 @@ export const getTask = async (req, res) => {
                         id: true,
                         name: true,
                         title: true,
-                        role: true,
                         email: true,
+                        memberGroups: {
+                            select: {
+                                role: true, // Ambil role dari GroupMember
+                                group: {
+                                    select: {
+                                        name: true, // Ambil nama grup jika diperlukan
+                                    },
+                                },
+                            },
+                        },
                     },
                 },
                 subTasks: true,
@@ -505,41 +502,78 @@ export const createSubTask = async (req, res) => {
 
 export const updateTask = async (req, res) => {
     try {
-        const { id } = req.params;
-        const { title, date, team, stage, priority, assets } = req.body;
+        const { id } = req.params; // ID task
+        const { title, date, stage, priority, assets, assignee } = req.body;
+        const userId = req.user.id; // ID user dari token
 
-        // Normalize and validate stage input
+        // Cek apakah task ada di database
+        const task = await prisma.task.findUnique({
+            where: { id },
+            include: { team: true },
+        });
+
+        if (!task) {
+            return res.status(404).json({
+                status: false,
+                message: 'Task not found.',
+            });
+        }
+
+        // Cek apakah user adalah admin grup jika task ini milik grup
+        if (task.groupId) {
+            const isAdmin = await prisma.group.findFirst({
+                where: { id: task.groupId, adminId: userId },
+            });
+
+            if (!isAdmin) {
+                return res.status(403).json({
+                    status: false,
+                    message: 'Only group admins can update tasks.',
+                });
+            }
+        } else {
+            // Jika bukan task grup, cek apakah user adalah pemilik task
+            const isOwner = task.team.some((member) => member.id === userId);
+
+            if (!isOwner) {
+                return res.status(403).json({
+                    status: false,
+                    message: 'You can only update your own tasks.',
+                });
+            }
+        }
+
+        // Validasi stage
         const validStage =
             stage?.toUpperCase() === 'IN-PROGRESS'
                 ? 'IN_PROGRESS'
                 : stage?.toUpperCase();
-        if (!['TODO', 'IN_PROGRESS', 'COMPLETED'].includes(validStage)) {
+        if (
+            stage &&
+            !['TODO', 'IN_PROGRESS', 'COMPLETED'].includes(validStage)
+        ) {
             return res.status(400).json({
                 status: false,
                 message: `Invalid stage value: ${stage}`,
             });
         }
 
-        // Filter out any team members with undefined IDs
-        const validTeam = team
-            ? team.filter((user) => user?.id !== undefined)
-            : [];
-
-        // Update the task with the validated data
+        // Update task dengan data baru
         const updatedTask = await prisma.task.update({
             where: { id },
             data: {
-                title,
-                date: new Date(date),
-                priority: priority.toUpperCase(),
-                assets,
-                stage: validStage,
-                team: {
-                    // set: validTeam.map((user) => ({ id: user.id })), // Only include valid IDs
-                    connect: validTeam.map((user) => ({ id: user.id })),
-                    disconnect: [],
-                },
+                ...(title && { title }),
+                ...(date && { date: new Date(date) }),
+                ...(priority && { priority: priority.toUpperCase() }),
+                ...(assets && { assets }),
+                ...(stage && { stage: validStage }),
+                ...(assignee && {
+                    team: {
+                        set: assignee.map((userId) => ({ id: userId })), // Ganti tim yang lama dengan tim baru
+                    },
+                }),
             },
+            include: { team: true }, // Sertakan informasi tim yang diperbarui
         });
 
         res.status(200).json({
@@ -584,13 +618,12 @@ export const trashTask = async (req, res) => {
 
 export const deleteRestoreTask = async (req, res) => {
     try {
-        const { id } = req.params;
-        const { actionType } = req.query;
+        const { id } = req.params; // Task ID (optional for deleteAll/restoreAll)
+        const { actionType } = req.query; // Action type (delete, deleteAll, restore, restoreAll)
 
         if (actionType === 'delete') {
-            const task = await prisma.task.findUnique({
-                where: { id },
-            });
+            // Handle deleting a single task
+            const task = await prisma.task.findUnique({ where: { id } });
 
             if (!task) {
                 return res
@@ -598,35 +631,37 @@ export const deleteRestoreTask = async (req, res) => {
                     .json({ status: false, message: 'Task not found' });
             }
 
-            // Hapus semua aktivitas dan subtask terkait dengan task yang dipilih
-            await prisma.activity.deleteMany({
-                where: { taskId: id },
-            });
-            await prisma.subTask.deleteMany({
-                where: { taskId: id },
-            });
+            // Delete related activities and subtasks
+            await prisma.activity.deleteMany({ where: { taskId: id } });
+            await prisma.subTask.deleteMany({ where: { taskId: id } });
 
-            // Hapus task
-            await prisma.task.delete({
-                where: { id },
-            });
+            // Delete the task
+            await prisma.task.delete({ where: { id } });
         } else if (actionType === 'deleteAll') {
-            // Hapus semua aktivitas dan subtask terkait dengan task yang berada di trash
-            await prisma.activity.deleteMany({
-                where: { task: { isTrashed: true } },
-            });
-            await prisma.subTask.deleteMany({
-                where: { task: { isTrashed: true } },
-            });
-
-            // Hapus semua task yang ada di trash
-            await prisma.task.deleteMany({
+            // Handle deleting all trashed tasks
+            const trashedTasks = await prisma.task.findMany({
                 where: { isTrashed: true },
             });
-        } else if (actionType === 'restore') {
-            const task = await prisma.task.findUnique({
-                where: { id },
+
+            if (trashedTasks.length === 0) {
+                return res
+                    .status(404)
+                    .json({ status: false, message: 'No tasks in the trash' });
+            }
+
+            // Delete related activities and subtasks
+            await prisma.activity.deleteMany({
+                where: { taskId: { in: trashedTasks.map((task) => task.id) } },
             });
+            await prisma.subTask.deleteMany({
+                where: { taskId: { in: trashedTasks.map((task) => task.id) } },
+            });
+
+            // Delete all trashed tasks
+            await prisma.task.deleteMany({ where: { isTrashed: true } });
+        } else if (actionType === 'restore') {
+            // Handle restoring a single task
+            const task = await prisma.task.findUnique({ where: { id } });
 
             if (!task) {
                 return res
@@ -639,9 +674,26 @@ export const deleteRestoreTask = async (req, res) => {
                 data: { isTrashed: false },
             });
         } else if (actionType === 'restoreAll') {
+            // Handle restoring all trashed tasks
+            const trashedTasks = await prisma.task.findMany({
+                where: { isTrashed: true },
+            });
+
+            if (trashedTasks.length === 0) {
+                return res
+                    .status(404)
+                    .json({ status: false, message: 'No tasks in the trash' });
+            }
+
+            // Restore all trashed tasks
             await prisma.task.updateMany({
                 where: { isTrashed: true },
                 data: { isTrashed: false },
+            });
+        } else {
+            return res.status(400).json({
+                status: false,
+                message: 'Invalid action type',
             });
         }
 
@@ -651,7 +703,7 @@ export const deleteRestoreTask = async (req, res) => {
         });
     } catch (error) {
         console.error(error);
-        return res.status(400).json({ status: false, message: error.message });
+        return res.status(500).json({ status: false, message: error.message });
     }
 };
 

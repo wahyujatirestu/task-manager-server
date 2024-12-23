@@ -22,7 +22,6 @@ const protectRoute = async (req, res, next) => {
                 name: true,
                 email: true,
                 title: true,
-                role: true,
                 isActive: true,
             },
         });
@@ -52,14 +51,98 @@ const protectRoute = async (req, res, next) => {
     }
 };
 
-const isAdminRoute = (req, res, next) => {
-    if (req.user && req.user.role === 'Admin') {
-        next();
-    } else {
-        return res.status(401).json({
-            status: false,
-            message: 'Not authorized as admin. Try login as admin.',
-        });
+const isAdminRoute = async (req, res, next) => {
+    try {
+        const userId = req.user.id;
+        const { id: taskId, groupId } = req.params;
+
+        if (!taskId && !groupId) {
+            console.log('Task ID or Group ID is missing.');
+            return res
+                .status(400)
+                .json({ message: 'Task ID or Group ID is required.' });
+        }
+
+        if (taskId) {
+            console.log('Checking task access for Task ID:', taskId);
+
+            // Cari tugas berdasarkan ID
+            const task = await prisma.task.findUnique({
+                where: { id: taskId },
+                select: {
+                    team: { select: { id: true } },
+                    groupId: true,
+                },
+            });
+
+            if (!task) {
+                console.log('Task not found for Task ID:', taskId);
+                return res
+                    .status(404)
+                    .json({ status: false, message: 'Task not found.' });
+            }
+
+            if (task.groupId) {
+                console.log(
+                    'Task belongs to a group. Checking admin rights...'
+                );
+                const isAdminGroup = await prisma.group.findFirst({
+                    where: { id: task.groupId, adminId: userId },
+                });
+
+                if (isAdminGroup) {
+                    console.log('User is group admin. Access granted.');
+                    return next();
+                }
+
+                console.log('Access denied. User is not a group admin.');
+                return res.status(403).json({
+                    status: false,
+                    message:
+                        'Access denied. Only group admins can access group tasks.',
+                });
+            }
+
+            const isOwnTask =
+                task.team &&
+                task.team.length > 0 &&
+                task.team.some((user) => user.id === userId);
+
+            if (isOwnTask) {
+                console.log('User owns the task. Access granted.');
+                return next();
+            }
+
+            console.log('Access denied. User does not own the task.');
+            return res.status(403).json({
+                status: false,
+                message: 'Access denied. You can only access your own tasks.',
+            });
+        }
+
+        if (groupId) {
+            console.log('Checking group access for Group ID:', groupId);
+
+            // Periksa apakah user adalah admin grup
+            const isAdminGroup = await prisma.group.findFirst({
+                where: { id: groupId, adminId: userId },
+            });
+
+            if (isAdminGroup) {
+                console.log('User is group admin. Access granted.');
+                return next();
+            }
+
+            console.log('Access denied. User is not a group admin.');
+            return res.status(403).json({
+                status: false,
+                message:
+                    'Access denied. Only group admins can perform this action.',
+            });
+        }
+    } catch (error) {
+        console.error('Error in isAdminRoute middleware:', error.message);
+        return res.status(500).json({ error: 'Internal server error' });
     }
 };
 

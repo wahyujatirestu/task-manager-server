@@ -14,7 +14,7 @@ import {
     searchTasks,
     getSuggestions,
 } from '../controllers/taskController.js';
-import { isAdminRoute, protectRoute } from '../middleware/authMiddleware.js';
+import { protectRoute, isAdminRoute } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
@@ -33,11 +33,6 @@ router.get('/get-subtask/:id', protectRoute, getAllSubTask);
 router.put('/update/:id', protectRoute, updateTask);
 router.put('/:id', protectRoute, isAdminRoute, trashTask);
 
-router.delete(
-    '/delete-restore/:id?',
-    protectRoute,
-    isAdminRoute,
-    deleteRestoreTask
-);
+router.delete('/delete-restore/:id?', protectRoute, deleteRestoreTask);
 
 export default router;

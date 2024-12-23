@@ -18,6 +18,11 @@ import {
     getMe,
     refreshToken,
     getAllUsers,
+    searchUsers,
+    createGroup,
+    getUserGroups,
+    addUserToGroup,
+    getGroupMembers,
 } from '../controllers/userController.js';
 
 const router = express.Router();
@@ -33,17 +38,26 @@ router.post('/forget-password', forgetPassword);
 router.post('/reset-password', resetPassword);
 router.post('/resend-verification', resendVerificationEmail);
 
+router.post('/create', protectRoute, createGroup);
+router.get('/my-groups', protectRoute, getUserGroups);
+router.post(
+    '/group/:groupId/add-user',
+    protectRoute,
+    isAdminRoute,
+    addUserToGroup
+);
+router.get('/group-members/:groupId', protectRoute, getGroupMembers);
+
+router.get('/search-users', protectRoute, searchUsers);
 router.get('/get-team', protectRoute, getTeamList);
 router.get('/notifications', protectRoute, getNotificationsList);
 
 router.put('/profile', protectRoute, updateUserProfile);
 router.put('/read-noti', protectRoute, markNotificationRead);
 router.put('/change-password', protectRoute, changeUserPassword);
+router.put('/:id', protectRoute, isAdminRoute, activateUserProfile);
 
 // //   FOR ADMIN ONLY - ADMIN ROUTES
-router
-    .route('/:id')
-    .put(protectRoute, isAdminRoute, activateUserProfile)
-    .delete(protectRoute, isAdminRoute, deleteUserProfile);
+router.route('/:id').delete(protectRoute, isAdminRoute, deleteUserProfile);
 
 export default router;
