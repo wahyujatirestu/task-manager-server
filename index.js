@@ -19,19 +19,6 @@ app.use(
         methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
     })
 );
-app.options('*', (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', process.env.ORIGIN);
-    res.setHeader(
-        'Access-Control-Allow-Methods',
-        'GET, POST, PUT, DELETE, PATCH'
-    );
-    res.setHeader(
-        'Access-Control-Allow-Headers',
-        'Content-Type, Authorization'
-    );
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-    res.sendStatus(204);
-});
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
