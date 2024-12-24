@@ -23,6 +23,7 @@ import {
     getUserGroups,
     addUserToGroup,
     getGroupMembers,
+    removeUserFromGroup,
 } from '../controllers/userController.js';
 
 const router = express.Router();
@@ -59,5 +60,11 @@ router.put('/:id', protectRoute, isAdminRoute, activateUserProfile);
 
 // //   FOR ADMIN ONLY - ADMIN ROUTES
 router.route('/:id').delete(protectRoute, isAdminRoute, deleteUserProfile);
+router.delete(
+    '/group/:groupId/remove-user',
+    protectRoute,
+    isAdminRoute,
+    removeUserFromGroup
+);
 
 export default router;

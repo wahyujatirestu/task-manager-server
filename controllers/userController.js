@@ -576,7 +576,8 @@ export const addUserToGroup = async (req, res) => {
         });
 
         if (existingMember) {
-            return res.status(400).json({
+            return res.status(200).json({
+                status: false,
                 message: 'User is already a member of the group.',
             });
         }
@@ -587,31 +588,45 @@ export const addUserToGroup = async (req, res) => {
 
         console.log('User added to group successfully:', groupMember);
 
-        await prisma.notice.create({
-            data: {
-                text: `You have been added to the group "${group.name}".`,
-                notiType: 'alert',
-                isRead: {
-                    create: [
-                        {
-                            user: { connect: { id: userId } },
-                        },
-                    ],
-                },
-            },
-        });
-
-        const updatedMembers = await prisma.groupMember.findMany({
-            where: { groupId },
-            include: { user: true },
-        });
-
         res.status(201).json({
+            status: true,
             message: 'User added successfully.',
-            members: updatedMembers,
         });
     } catch (error) {
         console.error('Error adding user to group:', error.message);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
+
+export const removeUserFromGroup = async (req, res) => {
+    try {
+        const { groupId } = req.params;
+        const { userId } = req.body;
+
+        if (!groupId || !userId) {
+            return res.status(400).json({
+                message: 'Group ID and User ID are required.',
+            });
+        }
+
+        // Hapus user dari grup
+        const deletedMember = await prisma.groupMember.deleteMany({
+            where: {
+                groupId,
+                userId,
+            },
+        });
+
+        if (deletedMember.count === 0) {
+            return res.status(404).json({
+                message: 'User not found in this group.',
+            });
+        }
+
+        console.log(`User ${userId} removed from group ${groupId}.`);
+        res.status(200).json({ message: 'User removed successfully.' });
+    } catch (error) {
+        console.error('Error removing user from group:', error.message);
         res.status(500).json({ error: 'Internal server error' });
     }
 };
@@ -701,6 +716,11 @@ export const getNotificationsList = async (req, res) => {
             where: {
                 isRead: {
                     none: {
+                        userId,
+                    },
+                },
+                isRead: {
+                    some: {
                         userId,
                     },
                 },
@@ -930,10 +950,18 @@ export const activateUserProfile = async (req, res) => {
 
 export const deleteUserProfile = async (req, res) => {
     try {
-        const id = req.params.id;
+        const userId = req.params.id;
 
+        console.log(`Deleting user with ID: ${userId}`);
+
+        // Hapus semua entri terkait di NoticeIsRead
+        await prisma.noticeIsRead.deleteMany({
+            where: { userId },
+        });
+
+        // Hapus pengguna
         await prisma.user.delete({
-            where: { id: id },
+            where: { id: userId },
         });
 
         res.status(200).json({
@@ -941,7 +969,7 @@ export const deleteUserProfile = async (req, res) => {
             message: 'User deleted successfully',
         });
     } catch (error) {
-        console.error(error);
+        console.error('Error deleting user:', error);
         return res.status(500).json({ status: false, message: error.message });
     }
 };

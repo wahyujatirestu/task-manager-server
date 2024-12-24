@@ -54,21 +54,22 @@ const protectRoute = async (req, res, next) => {
 const isAdminRoute = async (req, res, next) => {
     try {
         const userId = req.user.id;
-        const { id: taskId, groupId } = req.params;
+        const { id, groupId } = req.params; // `id` bisa merujuk pada Task, Group, atau User ID
 
-        if (!taskId && !groupId) {
-            console.log('Task ID or Group ID is missing.');
-            return res
-                .status(400)
-                .json({ message: 'Task ID or Group ID is required.' });
+        // Jika hanya User ID yang tersedia, lewati validasi tambahan
+        if (!groupId && req.baseUrl.includes('/api/user')) {
+            console.log(
+                'Operation is user-related. Skipping admin validation.'
+            );
+            return next();
         }
 
-        if (taskId) {
-            console.log('Checking task access for Task ID:', taskId);
+        // Validasi berdasarkan Task ID
+        if (id) {
+            console.log('Checking task access for Task ID:', id);
 
-            // Cari tugas berdasarkan ID
             const task = await prisma.task.findUnique({
-                where: { id: taskId },
+                where: { id },
                 select: {
                     team: { select: { id: true } },
                     groupId: true,
@@ -76,7 +77,7 @@ const isAdminRoute = async (req, res, next) => {
             });
 
             if (!task) {
-                console.log('Task not found for Task ID:', taskId);
+                console.log('Task not found for Task ID:', id);
                 return res
                     .status(404)
                     .json({ status: false, message: 'Task not found.' });
@@ -104,9 +105,7 @@ const isAdminRoute = async (req, res, next) => {
             }
 
             const isOwnTask =
-                task.team &&
-                task.team.length > 0 &&
-                task.team.some((user) => user.id === userId);
+                task.team && task.team.some((user) => user.id === userId);
 
             if (isOwnTask) {
                 console.log('User owns the task. Access granted.');
@@ -120,10 +119,10 @@ const isAdminRoute = async (req, res, next) => {
             });
         }
 
+        // Validasi berdasarkan Group ID
         if (groupId) {
             console.log('Checking group access for Group ID:', groupId);
 
-            // Periksa apakah user adalah admin grup
             const isAdminGroup = await prisma.group.findFirst({
                 where: { id: groupId, adminId: userId },
             });

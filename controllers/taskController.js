@@ -37,6 +37,8 @@ export const createTask = async (req, res) => {
             team: { connect: [{ id: userId }] }, // Default: hanya pembuat
         };
 
+        let assignedTeam = [{ id: userId }];
+
         if (groupId) {
             // Jika tugas dibuat untuk grup
             const group = await prisma.group.findUnique({
@@ -67,10 +69,11 @@ export const createTask = async (req, res) => {
 
             // Hanya admin yang bisa menetapkan anggota tim
             if (group.adminId === userId) {
+                assignedTeam = group.members.map((member) => ({
+                    id: member.userId,
+                }));
                 taskData.team = {
-                    connect: group.members.map((member) => ({
-                        id: member.userId,
-                    })),
+                    connect: assignedTeam,
                 };
             }
         }
@@ -80,10 +83,28 @@ export const createTask = async (req, res) => {
             include: { team: true, group: true },
         });
 
+        // Kirim notifikasi kepada semua anggota tim
+        await Promise.all(
+            assignedTeam.map(async (member) => {
+                await prisma.notice.create({
+                    data: {
+                        text: `You have been assigned a new task: "${task.title}"`,
+                        notiType: 'TaskAssigned',
+                        task: { connect: { id: task.id } },
+                        isRead: {
+                            create: {
+                                user: { connect: { id: member.id } },
+                            },
+                        },
+                    },
+                });
+            })
+        );
+
         res.status(201).json({
             status: true,
             task,
-            message: 'Task created successfully.',
+            message: 'Task created successfully, and notifications sent.',
         });
     } catch (error) {
         console.error('Error creating task:', error);
