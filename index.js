@@ -13,15 +13,13 @@ import { errorHandler, routeNotFound } from './middleware/errorMiddleware.js';
 const app = express();
 
 app.use(
-    cors('*')
-    //     {
-    //     origin: process.env.ORIGIN,
-    //     credentials: true,
-    //     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-    //     allowedHeaders: ['Content-Type', 'Authorization'],
-    // }
+    cors({
+        origin: process.env.ORIGIN,
+        credentials: true,
+        methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+    })
 );
-// app.options('*', cors());
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(bodyParser.json());
