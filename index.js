@@ -1,5 +1,4 @@
 import dotenv from 'dotenv';
-dotenv.config();
 
 import morgan from 'morgan';
 import express from 'express';
@@ -9,6 +8,7 @@ import bodyParser from 'body-parser';
 import userRoute from './routes/userRoute.js';
 import taskRoute from './routes/taskRoute.js';
 import { errorHandler, routeNotFound } from './middleware/errorMiddleware.js';
+dotenv.config();
 
 const app = express();
 
