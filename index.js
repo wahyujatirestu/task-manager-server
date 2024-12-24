@@ -13,7 +13,7 @@ import { errorHandler, routeNotFound } from './middleware/errorMiddleware.js';
 const app = express();
 
 app.use(
-    cors()
+    cors('*')
     //     {
     //     origin: process.env.ORIGIN,
     //     credentials: true,
