@@ -1,4 +1,3 @@
-cat > entrypoint.sh <<'EOF'
 #!/bin/sh
 set -e
 
@@ -35,7 +34,3 @@ fi
 
 echo "Starting application: exec $@"
 exec "$@"
-EOF
-
-# buat executable
-chmod +x entrypoint.sh

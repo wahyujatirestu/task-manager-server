@@ -30,10 +30,7 @@ services:
             - db
         ports:
             - '8800:8800'
-        volumes:
-            - ./:/usr/src/app:delegated
-        command: ['sh', './entrypoint.sh', 'npm', 'run', 'dev']
-        # untuk production, ganti command menjadi ["sh","./entrypoint.sh","npm","start"]
+        command: ['npm', 'start']
 
 volumes:
     db_data:
