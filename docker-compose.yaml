@@ -30,7 +30,7 @@ services:
             - db
         ports:
             - '8800:8800'
-        command: ['npm', 'start']
+        command: ['sh', './entrypoint.sh', 'npm', 'start']
 
 volumes:
     db_data:
