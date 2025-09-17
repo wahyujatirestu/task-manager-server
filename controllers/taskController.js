@@ -79,8 +79,11 @@ export const createTask = async (req, res) => {
         }
 
         const task = await prisma.task.create({
-            data: taskData,
-            include: { team: true, group: true },
+            data: {
+                ...taskData,
+                team: { connect: assignedTeam }, // Assign anggota tim ke task
+            },
+            include: { team: true, group: true }, // Include team in response
         });
 
         // Kirim notifikasi kepada semua anggota tim

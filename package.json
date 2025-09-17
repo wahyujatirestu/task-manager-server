@@ -4,8 +4,11 @@
     "type": "module",
     "main": "index.js",
     "scripts": {
-        "test": "echo \"Error: no test specified\" && exit 1",
-        "start": "node server.js"
+        "start": "node src/index.js",
+        "dev": "nodemon --watch src --ext js --exec node src/index.js",
+        "prisma:generate": "prisma generate",
+        "prisma:migrate": "prisma migrate deploy",
+        "prisma:seed": "node prisma/seed.js"
     },
     "keywords": [],
     "author": "",

@@ -360,50 +360,67 @@ export const resetPassword = async (req, res) => {
     try {
         const { token, newPassword, confirmNewPassword } = req.body;
 
+        console.log('Reset password request received.');
+
+        // Validasi input
         if (!token || !newPassword || !confirmNewPassword) {
+            console.log('Validation failed: Missing fields.');
             return res.status(400).json({ message: 'All fields are required' });
         }
 
         if (newPassword !== confirmNewPassword) {
+            console.log('Validation failed: Passwords do not match.');
             return res.status(400).json({ message: 'Passwords do not match' });
         }
 
-        // Verify the token
+        // Verifikasi token
         let decoded;
         try {
             decoded = jwt.verify(token, process.env.JWT_RESET_PASSWORD);
         } catch (err) {
-            return res
-                .status(400)
-                .json({ message: 'Invalid or expired token' });
+            console.log('Token validation failed: Invalid or expired token.');
+            return res.status(400).json({ message: 'Invalid or expired token' });
         }
 
-        // Find the user by decoded token
+        console.log('Token verified successfully:', decoded);
+
+        // Cari user berdasarkan token
         const user = await prisma.user.findUnique({
             where: { id: decoded.id },
         });
 
         if (!user) {
+            console.log('User not found for token:', decoded.id);
             return res.status(404).json({ message: 'User not found' });
         }
 
-        // Hash the new password
+        // Hash password baru
         const hashedPassword = await argon2.hash(newPassword);
 
-        // Update the user's password
+        // Update password user dan hapus semua token terkait
         await prisma.user.update({
             where: { id: user.id },
             data: { password: hashedPassword },
         });
 
-        res.status(200).json({
+        await prisma.token.deleteMany({
+            where: { userId: user.id },
+        });
+
+        console.log('Password reset successfully for user:', user.id);
+
+        // Kirimkan respons sukses
+        return res.status(200).json({
             message: 'Password has been reset successfully',
         });
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Internal server error' });
+        console.error('Unexpected error during password reset:', error.message);
+        return res.status(500).json({ message: 'Internal server error' });
     }
 };
+
+
+
 
 export const getAllUsers = async (req, res) => {
     try {

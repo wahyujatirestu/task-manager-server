@@ -33,7 +33,7 @@ router.post('/login', loginUser);
 router.get('/verify-email', verifyEmail);
 router.get('/me', protectRoute, getMe);
 router.post('/logout', logoutUser);
-router.get('/refresh-token', refreshToken);
+router.post('/refresh-token', refreshToken);
 router.get('/get-users', protectRoute, getAllUsers);
 router.post('/forget-password', forgetPassword);
 router.post('/reset-password', resetPassword);
@@ -41,12 +41,7 @@ router.post('/resend-verification', resendVerificationEmail);
 
 router.post('/create', protectRoute, createGroup);
 router.get('/my-groups', protectRoute, getUserGroups);
-router.post(
-    '/group/:groupId/add-user',
-    protectRoute,
-    isAdminRoute,
-    addUserToGroup
-);
+router.post('/:groupId/add-user', protectRoute, isAdminRoute, addUserToGroup);
 router.get('/group-members/:groupId', protectRoute, getGroupMembers);
 
 router.get('/search-users', protectRoute, searchUsers);
